@@ -1,0 +1,1 @@
+/home/dig/esp/master/esp-idf/export.sh

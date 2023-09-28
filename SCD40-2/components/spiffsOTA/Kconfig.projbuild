@@ -1,0 +1,82 @@
+menu "Firmware_Storage Upgrade Configuration"
+     
+     config DEFAULT_FIRMWARE_UPGRADE_URL
+        string "firmware upgrade url endpoint"
+        default "http://192.168.2.1:8070/"
+        help
+            URL of server which hosts the firmware/storage
+            image.
+     
+     config FIRMWARE_UPGRADE_FILENAME
+        string "firmware upgrade filename"
+        default "otaKlp.bin"
+        help
+            filenamen of the upgrade image.      
+            
+     config SPIFFS_UPGRADE_FILENAME
+        string "storage upgrade filename"
+        default "storage.bin"
+        help
+            filenamen of the upgrade image.
+            
+    config SPIFFS_INFO_FILENAME
+        string "storage info filename" 
+        default "storageVersion.txt"
+        help
+            file holding version of SPIFFS storage
+
+	 config OTA_RECV_TIMEOUT
+        int "OTA Receive Timeout"
+        default 5000
+        help
+            Maximum time for reception
+	  
+    config EXAMPLE_USE_CERT_BUNDLE
+        bool "Enable certificate bundle"
+        default y
+        depends on MBEDTLS_CERTIFICATE_BUNDLE
+        help
+            Enable trusted root certificate bundle. This approach allows to have
+            OTA updates functional with any public server without requirement
+            to explicitly add its server certificate.
+
+    config EXAMPLE_FIRMWARE_UPGRADE_URL_FROM_STDIN
+        bool
+        default y if EXAMPLE_FIRMWARE_UPGRADE_URL = "FROM_STDIN"
+
+    config EXAMPLE_SKIP_COMMON_NAME_CHECK
+        bool "Skip server certificate CN fieldcheck"
+        default n
+        help
+            This allows you to skip the validation of OTA server certificate CN field.
+
+    config EXAMPLE_FIRMWARE_UPGRADE_BIND_IF
+        bool "Support firmware upgrade bind specified interface"
+        default n
+        help
+            This allows you to bind specified interface in OTA example.
+
+    choice EXAMPLE_FIRMWARE_UPGRADE_BIND_IF_TYPE
+        prompt "Choose OTA data bind interface"
+        default EXAMPLE_FIRMWARE_UPGRADE_BIND_IF_STA
+        depends on EXAMPLE_FIRMWARE_UPGRADE_BIND_IF
+        help
+            Select which interface type of OTA data go through.
+
+        config EXAMPLE_FIRMWARE_UPGRADE_BIND_IF_STA
+            bool "Bind wifi station interface"
+            depends on EXAMPLE_CONNECT_WIFI
+            help
+                Select wifi station interface to pass the OTA data.
+
+        config EXAMPLE_FIRMWARE_UPGRADE_BIND_IF_ETH
+            bool "Bind ethernet interface"
+            depends on EXAMPLE_CONNECT_ETHERNET
+            help
+                Select ethernet interface to pass the OTA data.
+    endchoice
+endmenu
+
+
+
+
