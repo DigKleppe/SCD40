@@ -12,14 +12,13 @@
 #include "driver/i2c.h"
 #include "mdns.h"
 
-//#define SIMULATE
-
 #include "sensirionTask.h"
 #include "udpClient.h"
 #include "settings.h"
 
 #include "scd40.h"
 int16_t scd4x_start_periodic_measurement();
+extern bool inLowPowerMode;
 
 //#include "scd4x_i2c.h"
 //#include "sensirion_common.h"
@@ -31,8 +30,6 @@ int16_t scd4x_start_periodic_measurement();
 #include <string.h>
 #include "averager.h"
 
-#define UDPTXPORT	5001 // brink co2 only
-#define UDPTX2PORT	5002 // all data and serial nr
 
 #define MAXRETRIES 	5
 #define SCD30_TIMEOUT 600
@@ -46,11 +43,9 @@ TaskHandle_t SensirionTaskh;
 extern int scriptState;
 extern SemaphoreHandle_t I2CSemaphore;  // used by lvgl, shares the same bus
 
-
-
-Averager temperatureAvg (AVGERAGESAMPLES );
-Averager humAvg (AVGERAGESAMPLES );
-Averager CO2Avg (AVGERAGESAMPLES );
+Averager temperatureAvg(AVGERAGESAMPLES);
+Averager humAvg(AVGERAGESAMPLES);
+Averager CO2Avg(AVGERAGESAMPLES);
 
 typedef struct {
 	int32_t timeStamp;
@@ -119,14 +114,14 @@ void sensirionTask(void *pvParameter) {
 	int lastminute = -1;
 	int logPrescaler = 1;
 	char str[64];
-	//char str2[25];
-//	uint32_t dummy;
 	int sensirionTimeoutTimer = SCD30_TIMEOUT;
 	bool sensirionError = false;
 	SCD40measValues_t rawValues;
 	SCD40Status_t status;
 	SCD40serial_t serial;
 	int16_t error = 0;
+
+	ESP_LOGI(TAG, "Starting task");
 
 	time(&now);
 
@@ -138,10 +133,8 @@ void sensirionTask(void *pvParameter) {
 	while (1) {
 		vTaskDelay(1000);
 		lastVal.timeStamp = timeStamp++;
-		rawLastVal.co2 = 500 + 100 * sin(x);
-		lastVal.co2 = rawLastVal.co2 - userSettings.CO2offset;
-		rawLastVal.hum = 200 + 100 * cos(x);
-		lastVal.hum = rawLastVal.hum - userSettings.RHoffset;
+		lastVal.co2 = 500 + 100 * sin(x) - userSettings.CO2offset;
+		lastVal.hum = 200 + 100 * cos(x) - userSettings.RHoffset;
 		lastVal.temperature = 25 + 10 * sin(x + 1);
 		x += 0.01;
 		if (x > 1)
@@ -158,8 +151,8 @@ void sensirionTask(void *pvParameter) {
 		ESP_LOGI(TAG, "%s %d", str, logTxIdx);
 
 		if (connected) {
-			vTaskDelay(500 / portTICK_PERIOD_MS); // wait for UDP to send
 			sensorDataIsSend = true;
+			vTaskDelay(500 / portTICK_PERIOD_MS); // wait for UDP to send
 		}
 
 		temperatureAvg.write((int) (lastVal.temperature* 100.0));
@@ -183,6 +176,10 @@ void sensirionTask(void *pvParameter) {
 
 #else
 	do {
+		ESP_LOGI(TAG, "init");  // todo remove
+		vTaskDelay(100 / portTICK_PERIOD_MS);
+
+
 		if (SCD40Init(I2CmasterPort) != SCD40_OK) {
 			ESP_LOGE(TAG, "SCD40 Not found");
 			vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -196,7 +193,7 @@ void sensirionTask(void *pvParameter) {
 		}
 	} while (error);
 
-	ESP_LOGE(TAG, "SCD40 serial: 0x%04x%04x%04x\n", serial.serial_0, serial.serial_1, serial.serial_2);
+//	ESP_LOGI(TAG, "SCD40 serial: 0x%04x%04x%04x\n", serial.serial_0, serial.serial_1, serial.serial_2);
 
 	SCD40StartPeriodicMeasurement();
 	sensirionTimeoutTimer = SCD30_TIMEOUT;
@@ -206,48 +203,57 @@ void sensirionTask(void *pvParameter) {
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
 		status = SCD40Read(&rawValues);
 		if (status == SCD40_OK) {
+			if (inLowPowerMode)   // only 1 reading
+				scd4x_stop_periodic_measurement();
+
 			sensirionTimeoutTimer = SCD30_TIMEOUT;
 			lastVal.temperature = rawValues.temperature - userSettings.temperatureOffset;
 			lastVal.co2 = rawValues.co2 - userSettings.CO2offset;
 			lastVal.hum = rawValues.humidity - userSettings.RHoffset;
 			lastVal.timeStamp = timeStamp++;
 
-			ESP_LOGI(TAG, "t: %1.2f RH:%1.1f co2:%d", lastVal.temperature, lastVal.hum, (int) lastVal.co2);
-
-			sprintf(str, "3:%df", (int)lastVal.co2);
-			UDPsendMssg(UDPTXPORT, str, strlen(str));
-
-			sprintf(str, "S: %s t:%1.2f RH:%1.1f co2:%d", userSettings.moduleName, lastVal.temperature, lastVal.hum, (int)lastVal.co2);
-			UDPsendMssg(UDPTX2PORT, str, strlen(str));
-
+			ESP_LOGI(TAG, "t: %1.2f rh:%1.1f co2:%d", lastVal.temperature, lastVal.hum, (int) lastVal.co2);
 			if (connected) {
-				vTaskDelay(500 / portTICK_PERIOD_MS); // wait for UDP to send
-				sensorDataIsSend = true;
+				sprintf(str, "3:%d\n", (int) lastVal.co2);
+				UDPsendMssg(UDPTXPORT, str, strlen(str));
+				UDPsendMssg(UDPTXPORT, str, strlen(str));
+				sprintf(str, "S: %s t:%1.2f rh:%1.1f co2:%d\n", userSettings.moduleName, lastVal.temperature, lastVal.hum, (int) lastVal.co2);
+				UDPsendMssg(UDPTX2PORT, str, strlen(str));
+				UDPsendMssg(UDPTX2PORT, str, strlen(str));
+
+				if (inLowPowerMode) {  // only 1 reading
+				//	scd4x_stop_periodic_measurement();
+					vTaskDelay(300 / portTICK_PERIOD_MS); // wait for UDP to send
+					sensorDataIsSend = true;
+					while (1)
+						vTaskDelay(500 / portTICK_PERIOD_MS);
+				}
 			}
-			temperatureAvg.write((int) (rawValues.temperature* 100.0));  // avarage rawvalues
-			humAvg.write((int) ((int)rawValues.humidity));
+			temperatureAvg.write((int) (rawValues.temperature * 100.0));  // avarage rawvalues
+			humAvg.write((int) ((int) rawValues.humidity));
 			CO2Avg.write((int) (rawValues.co2));
 		}
-		if (sensirionTimeoutTimer-- == 0) {
-			ESP_LOGE(TAG, "Air sensor timeout");
-			sensirionError = true;
-		} else
-			sensirionError = false;
+		if (!inLowPowerMode) {
+			if (sensirionTimeoutTimer-- == 0) {
+				ESP_LOGE(TAG, "Air sensor timeout");
+				sensirionError = true;
+			} else
+				sensirionError = false;
+			time(&now);
+			localtime_r(&now, &timeinfo);  // no use in low power mode
+			if (lastminute != timeinfo.tm_min) {
+				lastminute = timeinfo.tm_min;   // every minute
+				if (logPrescaler-- == 0) {
+					logPrescaler = LOGINTERVAL;
+					lastVal.temperature = temperatureAvg.average() / 100.0; // log rawvalues
+					lastVal.hum = humAvg.average();
+					lastVal.co2 = (int) CO2Avg.average();
 
-		time(&now);
-		localtime_r(&now, &timeinfo);  // no use in low power mode
-		if (lastminute != timeinfo.tm_min) {
-			lastminute = timeinfo.tm_min;   // every minute
-			if (logPrescaler-- == 0) {
-				logPrescaler = LOGINTERVAL;
-				lastVal.temperature = temperatureAvg.average()/ 100.0; // log rawvalues
-				lastVal.hum = humAvg.average();
-				lastVal.co2 = (int) CO2Avg.average();
-
-				tLog[logTxIdx] = lastVal;
-				logTxIdx++;
-				if (logTxIdx >= MAXLOGVALUES)
-					logTxIdx = 0;
+					tLog[logTxIdx] = lastVal;
+					logTxIdx++;
+					if (logTxIdx >= MAXLOGVALUES)
+						logTxIdx = 0;
+				}
 			}
 		}
 	}
@@ -399,7 +405,7 @@ int getLogScript(char *pBuffer, int count) {
 		scriptState++;
 	}
 	if (scriptState == 1) { // send complete buffer
-	//	ESP_LOGI(TAG, "Sending %d logs", logsToSend);
+		//	ESP_LOGI(TAG, "Sending %d logs", logsToSend);
 		if (logsToSend) {
 			do {
 				len += sprintf(pBuffer + len, "%ld,", tLog[logRxIdx].timeStamp);
@@ -422,7 +428,7 @@ int getLogScript(char *pBuffer, int count) {
 void parseCGIWriteData(char *buf, int received) {
 	if (strncmp(buf, "setCal:", 7) == 0) {
 		if (readActionScript(&buf[7], writeVarDescriptors, NR_CALDESCRIPTORS)) {
-			lastVal.temperature = temperatureAvg.average()/ 100.0; // calibrate against averaged values
+			lastVal.temperature = temperatureAvg.average() / 100.0; // calibrate against averaged values
 			lastVal.hum = humAvg.average();
 			lastVal.co2 = (int) CO2Avg.average();
 

@@ -22,6 +22,12 @@
 
 #define NOCAL 						99999
 
+#define UDPTXPORT	5001 // brink co2 only
+#define UDPTX2PORT	5002 // all data and serial nr
+
+
+//#define SIMULATE
+
 typedef struct {
 	float temperature;
 	float RH;

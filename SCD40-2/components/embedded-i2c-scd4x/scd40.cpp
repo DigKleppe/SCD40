@@ -116,7 +116,7 @@ SCD40Status_t SCD40ReadSerial(SCD40serial_t *serial) {
 		return SCD40_ERROR;
 
 	} else {
-		ESP_LOGI(TAG, "serial: 0x%04x%04x%04x\n", serial->serial_0, serial->serial_1, serial->serial_2);
+//		ESP_LOGI(TAG, "serial: 0x%04x%04x%04x\n", serial->serial_0, serial->serial_1, serial->serial_2);
 		return SCD40_OK;
 	}
 }

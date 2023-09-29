@@ -101,8 +101,8 @@ esp_err_t loadWifiSettings(void);
 wifiSettings_t wifiSettings = { CONFIG_EXAMPLE_WIFI_SSID, CONFIG_EXAMPLE_WIFI_PASSWORD,CONFIG_DEFAULT_FIRMWARE_UPGRADE_URL,CONFIG_FIRMWARE_UPGRADE_FILENAME,false  };
 
 static int s_retry_num = 0;
-
 static wifi_config_t wifi_config;
+static bool doStop;
 
 
 
@@ -110,7 +110,9 @@ static wifi_config_t wifi_config;
 static void handler_on_wifi_disconnect(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
-    s_retry_num++;
+	if (doStop)
+		return;
+	s_retry_num++;
     connected = false;
     xEventGroupClearBits(s_wifi_event_group, CONNECTED_BIT);
     if (s_retry_num > CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY) {
@@ -258,7 +260,8 @@ void wifi_start(void)
 
 void wifi_stop(void)
 {
-    esp_err_t err = esp_wifi_stop();
+    doStop = true;
+	esp_err_t err = esp_wifi_stop();
     if (err == ESP_ERR_WIFI_NOT_INIT) {
         return;
     }

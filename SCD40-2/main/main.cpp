@@ -30,11 +30,16 @@
 #include "wifiConnect.h"
 #include "settings.h"
 #include "updateSpiffsTask.h"
+#include "udpClient.h"
 
 #include "sensirionTask.h"
-
-#define LOWPOWERDELAY  				5 // minutes before going to sleepmode after powerup (no TCP anymore)
-#define WAKEUP_INTERVAL				60 // seconds
+#ifndef SIMULATE
+#define LOWPOWERDELAY  				20//	(1*60) // seconds before going to sleepmode after powerup (no TCP anymore)
+#define WAKEUP_INTERVAL				60    // seconds
+#else
+#define LOWPOWERDELAY  				10 // seconds before going to sleepmode after powerup (no TCP anymore)
+#define WAKEUP_INTERVAL				15 // seconds
+#endif
 
 //#define SDA_PIN  					21 // DMM board
 //#define SCL_PIN 					22
@@ -60,6 +65,8 @@ esp_err_t init_spiffs(void);
 extern bool settingsChanged; // from settingsScreen
 uint32_t stackWm[5];
 uint32_t upTime;
+bool inLowPowerMode;
+bool stopWifi;
 
 __attribute__((weak)) int getLogScript(char *pBuffer, int count) {
 	return 0;
@@ -131,7 +138,6 @@ int testSCD40(i2c_port_t i2c_master_port);
 extern "C" {
 void app_main() {
 	esp_err_t err;
-	bool inLowPowerMode = false;
 	bool toggle = false;
 	int lowPowerTimer;
 
@@ -147,15 +153,13 @@ void app_main() {
 	ESP_LOGI(TAG, "\n **************** start *****************\n");
 
 	esp_reset_reason_t reason = esp_reset_reason();
-	if (reason == ESP_RST_DEEPSLEEP) {
-		// printf("Was powered up\n");
-		printf("Deep sleep awoke\n");
+	if (reason != ESP_RST_POWERON ) {  // panic ??  todo
 		inLowPowerMode = true;
 	} else {
-		lowPowerTimer = LOWPOWERDELAY * 60;
-		printf("awoke reason: %d\n", reason);
+		lowPowerTimer = LOWPOWERDELAY;
 	}
 
+	ESP_LOGI(TAG,"awoke reason: %d\n", reason);
 	deep_sleep_register_rtc_timer_wakeup();
 	err = nvs_flash_init();
 	if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -166,16 +170,25 @@ void app_main() {
 	ESP_ERROR_CHECK(err);
 
 	if (!inLowPowerMode) {
-		ESP_ERROR_CHECK(init_spiffs());
 		setBootPartitionToFactory();
 	}
+
+	ESP_ERROR_CHECK(init_spiffs());
 	err = loadSettings();
+	wifiConnect();
 
 	int I2CmasterPort = I2C_MASTER_NUM;
 	i2c_master_init();
-	xTaskCreate(sensirionTask, "sensirionTask", 4 * 1024, &I2CmasterPort, 0, &SensirionTaskh);
 
-	wifiConnect();
+//	if( inLowPowerMode) {
+	while(!connected)
+		vTaskDelay(10 / portTICK_PERIOD_MS);
+//	}
+	char str[20];
+	sprintf(str, "Awoke reason: %d\n", reason);
+	UDPsendMssg(UDPTX2PORT, str, strlen(str));
+
+	xTaskCreate(sensirionTask, "sensirionTask", 4 * 1024, &I2CmasterPort, 0, &SensirionTaskh);
 
 	while (1) {
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -189,8 +202,11 @@ void app_main() {
 
 		if (inLowPowerMode) {
 			if (sensorDataIsSend) {
+				sensorDataIsSend = false;
+			    ESP_ERROR_CHECK(i2c_driver_delete(I2C_MASTER_NUM));
+			    ESP_LOGI(TAG, "I2C de-initialized successfully");
 				vTaskDelete(connectTaskh);
-				esp_wifi_stop();
+				wifi_stop();
 				esp_deep_sleep_start();
 			}
 		}
@@ -217,36 +233,14 @@ void app_main() {
 				vTaskDelay(1000 / portTICK_PERIOD_MS);
 			} while (lowPowerTimer-- > 0);
 			//		}	while (1);
-
 			vTaskDelete(connectTaskh);
-			esp_wifi_stop();
+		    ESP_ERROR_CHECK(i2c_driver_delete(I2C_MASTER_NUM));
+			ESP_LOGI(TAG, "I2C de-initialized successfully");
+			wifi_stop();
 			esp_deep_sleep_start();
+			while(1)
+				vTaskDelay(1000 / portTICK_PERIOD_MS);
 		}
-
-//		stackWm[0] = uxTaskGetStackHighWaterMark( connectTaskh );
-//		stackWm[1] = uxTaskGetStackHighWaterMark( guiCommonTaskh );
-//		stackWm[2] = uxTaskGetStackHighWaterMark( guiTaskh );
-//		stackWm[3] = uxTaskGetStackHighWaterMark( SensirionTaskh );
-////		printf ( "freeHeapSize %d\n",  xPortGetFreeHeapSize());
-//		printf ( "freeHeapSize MALLOC_CAP_DMA:\n");
-//		heap_caps_print_heap_info(MALLOC_CAP_DMA);
-
-//
-//		cntr++;
-//		sprintf( str,"status %d",cntr);
-//		displayMssg.displayItem = DISPLAY_ITEM_STATUSLINE;
-//
-//		if ( xQueueSend( displayMssgBox, &displayMssg, 0 )== pdPASS)
-//			xQueueReceive(displayReadyMssgBox, &dummy, 500);// if accepted wait until data is displayed
-//
-//		displayMssg.displayItem = DISPLAY_ITEM_MEASLINE;
-//
-//		for (int n = 0; n < 4; n++){
-//			displayMssg.line = n;
-//			sprintf (str , "8888888%d", cntr);
-//			if ( xQueueSend( displayMssgBox, &displayMssg, 0 )== pdPASS)
-//				xQueueReceive(displayReadyMssgBox, &dummy, 500);// if accepted wait until data is displayed
-//		}
 	}
 }
 }

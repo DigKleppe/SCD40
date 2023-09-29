@@ -31,6 +31,7 @@ SCD40Status_t SCD40Init(i2c_port_t i2c_master_port);
 SCD40Status_t SCD40ReadSerial(SCD40serial_t * serial);
 SCD40Status_t SCD40Read( SCD40measValues_t * values);
 SCD40Status_t SCD40StartPeriodicMeasurement( );
+int16_t scd4x_stop_periodic_measurement();
 
 #ifdef __cplusplus
 }
