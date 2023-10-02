@@ -34,12 +34,14 @@
 
 #include "sensirionTask.h"
 #ifndef SIMULATE
-#define LOWPOWERDELAY  				20//	(1*60) // seconds before going to sleepmode after powerup (no TCP anymore)
-#define WAKEUP_INTERVAL				60    // seconds
+#define LOWPOWERDELAY  				60//	(1*60) // seconds before going to sleepmode after powerup (no TCP anymore)
+#define WAKEUP_INTERVAL				120    // seconds
 #else
-#define LOWPOWERDELAY  				10 // seconds before going to sleepmode after powerup (no TCP anymore)
+#define LOWPOWERDELAY  				11110 // seconds before going to sleepmode after powerup (no TCP anymore)
 #define WAKEUP_INTERVAL				15 // seconds
 #endif
+
+#define USE_LOWPOWERMODE
 
 //#define SDA_PIN  					21 // DMM board
 //#define SCL_PIN 					22
@@ -153,11 +155,14 @@ void app_main() {
 	ESP_LOGI(TAG, "\n **************** start *****************\n");
 
 	esp_reset_reason_t reason = esp_reset_reason();
+
+#ifdef USE_LOWPOWERMODE
 	if (reason != ESP_RST_POWERON ) {  // panic ??  todo
 		inLowPowerMode = true;
 	} else {
 		lowPowerTimer = LOWPOWERDELAY;
 	}
+#endif
 
 	ESP_LOGI(TAG,"awoke reason: %d\n", reason);
 	deep_sleep_register_rtc_timer_wakeup();
@@ -231,8 +236,11 @@ void app_main() {
 					saveSettings();
 				}
 				vTaskDelay(1000 / portTICK_PERIOD_MS);
+#ifdef USE_LOWPOWERMODE
 			} while (lowPowerTimer-- > 0);
-			//		}	while (1);
+#else
+			}	while (1);
+#endif
 			vTaskDelete(connectTaskh);
 		    ESP_ERROR_CHECK(i2c_driver_delete(I2C_MASTER_NUM));
 			ESP_LOGI(TAG, "I2C de-initialized successfully");

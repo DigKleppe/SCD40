@@ -297,9 +297,9 @@ esp_err_t wifi_sta_do_connect(wifi_config_t wifi_config, bool wait)
     }
     if (wait) {
         ESP_LOGI(TAG, "Waiting for IP(s)");
-#if CONFIG_EXAMPLE_CONNECT_IPV4
+//#if CONFIG_EXAMPLE_CONNECT_IPV4
         xSemaphoreTake(s_semph_get_ip_addrs, portMAX_DELAY);
-#endif
+//#endif
 #if CONFIG_EXAMPLE_CONNECT_IPV6
         xSemaphoreTake(s_semph_get_ip6_addrs, portMAX_DELAY);
 #endif
