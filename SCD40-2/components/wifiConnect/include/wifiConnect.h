@@ -26,15 +26,28 @@ extern "C" {
 typedef struct {
 	char SSID[33];
 	char pwd[64];
+	esp_ip4_addr_t ip4Address;
+	esp_ip4_addr_t gw;
 	char upgradeURL[64];
 	char upgradeFileName[32];
 	bool updated;
 }wifiSettings_t;
 
+extern bool	DHCPoff;
+extern bool IP6off;
+extern bool DNSoff;
+extern bool fileServerOff;
+
 extern wifiSettings_t wifiSettings;
+extern wifiSettings_t wifiSettingsDefaults;
 extern char ipstr[];
 extern volatile bool connected;
 extern TaskHandle_t connectTaskh;
+
+#define STATIC_NETMASK_ADDR "255.255.255.0"
+#define DEFAULT_IPADDRESS 	"192.168.2.50"
+#define DEFAULT_GW		 	"192.168.2.255"
+
 
 void wifiConnect ();
 

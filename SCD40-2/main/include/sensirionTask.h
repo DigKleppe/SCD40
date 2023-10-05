@@ -14,6 +14,8 @@
 #include "settings.h"
 
 
+//#define SIMULATE
+
 #define MEASINTERVAL			 	5  // interval for sensiron sensor in seconds
 #define LOGINTERVAL					5  //minutes
 #define AVGERAGESAMPLES				((LOGINTERVAL * 60)/MEASINTERVAL)
@@ -24,9 +26,6 @@
 
 #define UDPTXPORT	5001 // brink co2 only
 #define UDPTX2PORT	5002 // all data and serial nr
-
-
-//#define SIMULATE
 
 typedef struct {
 	float temperature;

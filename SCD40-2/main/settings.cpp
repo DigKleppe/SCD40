@@ -137,7 +137,7 @@ esp_err_t loadSettings() {
 	if (err != ESP_OK) {
 		ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(err));
 	} else {
-		ESP_LOGI(TAG, "reading SSID and password");
+		ESP_LOGI(TAG, "reading settings");
 		len =  sizeof(wifiSettings_t);
 		err = nvs_get_blob(my_handle, "WifiSettings", (void *) &wifiSettings, &len);
 		len = sizeof(userSettings_t);
@@ -163,7 +163,8 @@ esp_err_t loadSettings() {
 	if(strncmp(userSettings.checkstr,USERSETTINGS_CHECKSTR, strlen (USERSETTINGS_CHECKSTR) )	!= 0)
 	{
 		userSettings = userSettingsDefaults;
-		ESP_LOGE(TAG, "default usersettings loaded");
+		wifiSettings = wifiSettingsDefaults;
+		ESP_LOGE(TAG, "default settings loaded");
 		doSave = true;  // set filename for OTA via factory firmware
 	}
 

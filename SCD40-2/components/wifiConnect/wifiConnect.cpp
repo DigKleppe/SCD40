@@ -17,7 +17,6 @@
    software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
    CONDITIONS OF ANY KIND, either express or implied.
  */
-
 #include <string.h>
 #include "esp_log.h"
 #include "wifiConnect.h"
@@ -25,9 +24,12 @@
 #include "esp_smartconfig.h"
 #include "settings.h"
 #include "mdns.h"
+#include "lwip/ip4_addr.h"
 
 void initialiseMdns( char * hostName);
 esp_err_t start_file_server(const char *base_path);
+
+static void setStaticIp(esp_netif_t *netif);
 
 // @formatter:off
 #if CONFIG_EXAMPLE_CONNECT_IPV6
@@ -42,6 +44,10 @@ const char *ipv6_addr_types_to_str[6] = {
 };
 #endif
 
+bool DHCPoff;
+bool IP6off;
+bool DNSoff;
+bool fileServerOff;
 
 static const char *TAG = "connect";
 esp_netif_t *s_sta_netif = NULL;
@@ -95,15 +101,19 @@ TaskHandle_t connectTaskh;
 #define EXAMPLE_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WAPI_PSK
 #endif
 
+
+
 esp_err_t saveWifiSettings(void);
 esp_err_t loadWifiSettings(void);
 
-wifiSettings_t wifiSettings = { CONFIG_EXAMPLE_WIFI_SSID, CONFIG_EXAMPLE_WIFI_PASSWORD,CONFIG_DEFAULT_FIRMWARE_UPGRADE_URL,CONFIG_FIRMWARE_UPGRADE_FILENAME,false  };
+
+
+wifiSettings_t wifiSettings = { CONFIG_EXAMPLE_WIFI_SSID, CONFIG_EXAMPLE_WIFI_PASSWORD,0,0,CONFIG_DEFAULT_FIRMWARE_UPGRADE_URL,CONFIG_FIRMWARE_UPGRADE_FILENAME,false  };
+wifiSettings_t wifiSettingsDefaults = { CONFIG_EXAMPLE_WIFI_SSID, CONFIG_EXAMPLE_WIFI_PASSWORD,ipaddr_addr(DEFAULT_IPADDRESS),ipaddr_addr(DEFAULT_GW),CONFIG_DEFAULT_FIRMWARE_UPGRADE_URL,CONFIG_FIRMWARE_UPGRADE_FILENAME,false  };
 
 static int s_retry_num = 0;
 static wifi_config_t wifi_config;
 static bool doStop;
-
 
 
 // @formatter:on
@@ -139,6 +149,9 @@ static void handler_on_wifi_disconnect(void *arg, esp_event_base_t event_base,
 static void handler_on_wifi_connect(void *esp_netif, esp_event_base_t event_base,
                             int32_t event_id, void *event_data)
 {
+	if( DHCPoff)
+      setStaticIp((esp_netif_t*) esp_netif);
+
 #if CONFIG_EXAMPLE_CONNECT_IPV6
     esp_netif_create_ip6_linklocal((esp_netif_t *)esp_netif);
 #endif // CONFIG_EXAMPLE_CONNECT_IPV6
@@ -149,6 +162,7 @@ static void handler_on_sta_got_ip(void *arg, esp_event_base_t event_base,
 {
     s_retry_num = 0;
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+
     if (!is_our_netif(EXAMPLE_NETIF_DESC_STA, event->esp_netif)) {
         return;
     }
@@ -165,7 +179,11 @@ static void handler_on_sta_got_ip(void *arg, esp_event_base_t event_base,
 static void handler_on_sta_got_ipv6(void *arg, esp_event_base_t event_base,
                         int32_t event_id, void *event_data)
 {
-    ip_event_got_ip6_t *event = (ip_event_got_ip6_t *)event_data;
+    if ( IP6off) {
+    	return;
+    }
+
+	ip_event_got_ip6_t *event = (ip_event_got_ip6_t *)event_data;
     if (!is_our_netif(EXAMPLE_NETIF_DESC_STA, event->esp_netif)) {
         return;
     }
@@ -213,7 +231,6 @@ static void SCevent_handler(void* arg, esp_event_base_t event_base,
         if (wifi_config.sta.bssid_set == true) {
             memcpy(wifi_config.sta.bssid, evt->bssid, sizeof(wifi_config.sta.bssid));
         }
-
         memcpy(ssid, evt->ssid, sizeof(evt->ssid));
         memcpy(password, evt->password, sizeof(evt->password));
         ESP_LOGI(TAG, "SSID:%s", ssid);
@@ -236,7 +253,37 @@ static void SCevent_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
+static void setStaticIp(esp_netif_t *netif)
+{
+	if (esp_netif_dhcpc_stop(netif) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to stop dhcp client");
+        return;
+    }
+    esp_netif_ip_info_t ip;
+    memset(&ip, 0 , sizeof(esp_netif_ip_info_t));
 
+    if ( wifiSettings.ip4Address.addr == 0) {
+    	ip.ip.addr = ipaddr_addr(DEFAULT_IPADDRESS);
+        ip.gw.addr = ipaddr_addr(DEFAULT_GW);
+    }
+    else {
+       	ip.ip =  wifiSettings.ip4Address;   //  ipaddr_addr(EXAMPLE_STATIC_IP_ADDR);
+        ip.gw = wifiSettings.gw;
+    }
+    ip.netmask.addr = ipaddr_addr(STATIC_NETMASK_ADDR);
+
+	ESP_LOGI(TAG, "Set fixed IPv4 address to: " IPSTR ",", IP2STR(&ip.ip));
+
+
+    if (esp_netif_set_ip_info(netif, &ip) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set ip info");
+        return;
+    }
+
+ //   ESP_LOGD(TAG, "Success to set static ip: %s, netmask: %s, gw: %s", EXAMPLE_STATIC_IP_ADDR, EXAMPLE_STATIC_NETMASK_ADDR, EXAMPLE_STATIC_GW_ADDR);
+  //  ESP_ERROR_CHECK(example_set_dns_server(netif, ipaddr_addr(EXAMPLE_MAIN_DNS_SERVER), ESP_NETIF_DNS_MAIN));
+  //  ESP_ERROR_CHECK(example_set_dns_server(netif, ipaddr_addr(EXAMPLE_BACKUP_DNS_SERVER), ESP_NETIF_DNS_BACKUP));
+}
 
 
 void wifi_start(void)
@@ -249,7 +296,8 @@ void wifi_start(void)
     esp_netif_config.if_desc = EXAMPLE_NETIF_DESC_STA;
     esp_netif_config.route_prio = 128;
     s_sta_netif = esp_netif_create_wifi(WIFI_IF_STA, &esp_netif_config);
-   	esp_netif_set_hostname (s_sta_netif,userSettings.moduleName);
+
+    esp_netif_set_hostname (s_sta_netif,userSettings.moduleName);
     esp_wifi_set_default_wifi_sta_handlers();
 
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
@@ -297,11 +345,10 @@ esp_err_t wifi_sta_do_connect(wifi_config_t wifi_config, bool wait)
     }
     if (wait) {
         ESP_LOGI(TAG, "Waiting for IP(s)");
-//#if CONFIG_EXAMPLE_CONNECT_IPV4
         xSemaphoreTake(s_semph_get_ip_addrs, portMAX_DELAY);
-//#endif
 #if CONFIG_EXAMPLE_CONNECT_IPV6
-        xSemaphoreTake(s_semph_get_ip6_addrs, portMAX_DELAY);
+        if ( !IP6off)
+        	xSemaphoreTake(s_semph_get_ip6_addrs, portMAX_DELAY);
 #endif
         if (s_retry_num > CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY) {
             return ESP_FAIL;
@@ -367,7 +414,8 @@ void print_all_netif_ips(const char *prefix)
 #if CONFIG_LWIP_IPV4
             esp_netif_ip_info_t ip;
             ESP_ERROR_CHECK(esp_netif_get_ip_info(netif, &ip));
-
+            wifiSettings.ip4Address = ip.ip;
+            wifiSettings.gw = ip.gw;
             ESP_LOGI(TAG, "- IPv4 address: " IPSTR ",", IP2STR(&ip.ip));
 #endif
 #if CONFIG_EXAMPLE_CONNECT_IPV6
@@ -430,18 +478,22 @@ void wifiConnectTask(void *parm) {
 	ESP_ERROR_CHECK(esp_event_handler_register(SC_EVENT, ESP_EVENT_ANY_ID, &SCevent_handler, NULL));
 	ESP_ERROR_CHECK(esp_smartconfig_set_type(SC_TYPE_ESPTOUCH));
 	s_wifi_event_group = xEventGroupCreate();
-
-	ESP_ERROR_CHECK(start_file_server("/spiffs"));
+	if( ! fileServerOff) {
+		ESP_ERROR_CHECK(start_file_server("/spiffs"));
+	}
 
 	while (1) {
 		if (!connected) {
 			if (connect() == ESP_OK) {
 				ESP_LOGI(TAG, "connected");
-				initialiseMdns(userSettings.moduleName);
+				if( !DNSoff){
+					initialiseMdns(userSettings.moduleName);
+				}
 				print_all_netif_ips(EXAMPLE_NETIF_DESC_STA);
 				connected = true;
 			} else {  // no connection, start smartconfig
 				s_retry_num = 0;
+				DHCPoff = false;
 				smartconfig_start_config_t cfg = SMARTCONFIG_START_CONFIG_DEFAULT();
 				ESP_ERROR_CHECK(esp_smartconfig_start(&cfg));
 				// wait for smartConfig
@@ -449,11 +501,12 @@ void wifiConnectTask(void *parm) {
 				esp_smartconfig_stop();
 				if (uxBits & CONNECTED_BIT) {
 					ESP_LOGI(TAG, "WiFi Connected to ap");
-					initialiseMdns(userSettings.moduleName);
+					if( !DNSoff){
+						initialiseMdns(userSettings.moduleName);
+					}
 					print_all_netif_ips(EXAMPLE_NETIF_DESC_STA);
 					connected = true;
 					saveWifiSettings();
-
 				}
 				if (uxBits & ESPTOUCH_DONE_BIT) {
 					ESP_LOGI(TAG, "smartconfig over");

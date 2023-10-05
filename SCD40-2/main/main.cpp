@@ -37,7 +37,7 @@
 #define LOWPOWERDELAY  				60//	(1*60) // seconds before going to sleepmode after powerup (no TCP anymore)
 #define WAKEUP_INTERVAL				120    // seconds
 #else
-#define LOWPOWERDELAY  				11110 // seconds before going to sleepmode after powerup (no TCP anymore)
+#define LOWPOWERDELAY  				20 // seconds before going to sleepmode after powerup (no TCP anymore)
 #define WAKEUP_INTERVAL				15 // seconds
 #endif
 
@@ -141,7 +141,7 @@ extern "C" {
 void app_main() {
 	esp_err_t err;
 	bool toggle = false;
-	int lowPowerTimer;
+	int lowPowerTimer=0;
 
 	esp_rom_gpio_pad_select_gpio(LED_PIN);
 	gpio_set_direction(LED_PIN, GPIO_MODE_OUTPUT);
@@ -157,13 +157,17 @@ void app_main() {
 	esp_reset_reason_t reason = esp_reset_reason();
 
 #ifdef USE_LOWPOWERMODE
-	if (reason != ESP_RST_POWERON ) {  // panic ??  todo
+	if (reason == ESP_RST_DEEPSLEEP ) {
+//	if(1) {
 		inLowPowerMode = true;
+		DHCPoff = true;
+		IP6off = true;
+		DNSoff = true;
+		fileServerOff = true;
 	} else {
 		lowPowerTimer = LOWPOWERDELAY;
 	}
 #endif
-
 	ESP_LOGI(TAG,"awoke reason: %d\n", reason);
 	deep_sleep_register_rtc_timer_wakeup();
 	err = nvs_flash_init();
@@ -189,9 +193,6 @@ void app_main() {
 	while(!connected)
 		vTaskDelay(10 / portTICK_PERIOD_MS);
 //	}
-	char str[20];
-	sprintf(str, "Awoke reason: %d\n", reason);
-	UDPsendMssg(UDPTX2PORT, str, strlen(str));
 
 	xTaskCreate(sensirionTask, "sensirionTask", 4 * 1024, &I2CmasterPort, 0, &SensirionTaskh);
 
