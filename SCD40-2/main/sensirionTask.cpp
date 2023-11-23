@@ -15,6 +15,7 @@
 #include "sensirionTask.h"
 #include "udpClient.h"
 #include "settings.h"
+#include "wifiConnect.h"
 
 #include "scd40.h"
 int16_t scd4x_start_periodic_measurement();
@@ -213,7 +214,7 @@ void sensirionTask(void *pvParameter) {
 			lastVal.timeStamp = timeStamp++;
 
 			ESP_LOGI(TAG, "t: %1.2f rh:%1.1f co2:%d", lastVal.temperature, lastVal.hum, (int) lastVal.co2);
-			if (connected) {
+			if (connectStatus ==  IP_RECEIVED) {
 				sprintf(str, "3:%d\n", (int) lastVal.co2);
 				UDPsendMssg(UDPTXPORT, str, strlen(str));
 				UDPsendMssg(UDPTXPORT, str, strlen(str));

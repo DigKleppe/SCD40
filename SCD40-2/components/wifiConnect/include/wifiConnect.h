@@ -33,23 +33,23 @@ typedef struct {
 	bool updated;
 }wifiSettings_t;
 
-extern bool	DHCPoff;
-extern bool IP6off;
-extern bool DNSoff;
-extern bool fileServerOff;
-
 extern wifiSettings_t wifiSettings;
 extern wifiSettings_t wifiSettingsDefaults;
 extern char ipstr[];
-extern volatile bool connected;
-extern TaskHandle_t connectTaskh;
 
 #define STATIC_NETMASK_ADDR "255.255.255.0"
 #define DEFAULT_IPADDRESS 	"192.168.2.50"
 #define DEFAULT_GW		 	"192.168.2.255"
 
+extern bool DHCPoff;
+extern bool DNSoff;
+extern bool fileServerOff;
 
-void wifiConnect ();
+typedef enum { CONNECTING, CONNECTED, SMARTCONFIG_ACTIVE , IP_RECEIVED} connectStatus_t;
+
+extern volatile  connectStatus_t connectStatus;
+
+void wifiConnect (void);
 
 
 /* Common functions for protocol examples, to establish Wi-Fi or Ethernet connection.
@@ -146,7 +146,7 @@ esp_eth_handle_t get_eth_handle(void);
 static inline esp_err_t connect(void) {return ESP_OK;}
 #endif // !CONFIG_IDF_TARGET_LINUX
 
-#define CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY 	3
+#define CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY 	10
 
 #if CONFIG_EXAMPLE_CONNECT_IPV6
 #define MAX_IP6_ADDRS_PER_NETIF (5)

@@ -23,42 +23,37 @@
 #include "lwip/sys.h"
 #include <lwip/netdb.h>
 
-
 static const char *TAG = "udpClient";
-extern volatile bool connected;
 
 int UDPsendMssg(int port, void *mssg, int len) {
 	int sockfd;
 	int opt = 1;
-	if (connected) {
 
-		struct sockaddr_in servaddr;
-		// Creating socket file descriptor
-		if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-			perror("socket creation failed");
-			return -1;
-		}
-
-		memset(&servaddr, 0, sizeof(servaddr));
-		servaddr.sin_family = AF_INET;
-		servaddr.sin_port = htons(port);
-		servaddr.sin_addr.s_addr = IPADDR_BROADCAST; // INADDR_ANY;
-//	inet_pton(AF_INET, "192.168.2.255", &servaddr.sin_addr.s_addr);
-		setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &opt, sizeof(opt));
-
-		// int err = sendto(sockfd, payload, strlen(payload), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-		int err = sendto(sockfd, (const char*) mssg, len, 0, (const struct sockaddr*) &servaddr, sizeof(servaddr));
-
-		if (err < 0) {
-			ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
-		}
-		// ESP_LOGI(TAG, "Message sent to port: %d", port);
-
-		close(sockfd);
-
-		return 0;
+	struct sockaddr_in servaddr;
+	// Creating socket file descriptor
+	if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+		perror("socket creation failed");
+		return -1;
 	}
-	return -1;
+
+	memset(&servaddr, 0, sizeof(servaddr));
+	servaddr.sin_family = AF_INET;
+	servaddr.sin_port = htons(port);
+	servaddr.sin_addr.s_addr = IPADDR_BROADCAST; // INADDR_ANY;
+//	inet_pton(AF_INET, "192.168.2.255", &servaddr.sin_addr.s_addr);
+	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &opt, sizeof(opt));
+
+	// int err = sendto(sockfd, payload, strlen(payload), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+	int err = sendto(sockfd, (const char*) mssg, len, 0, (const struct sockaddr*) &servaddr, sizeof(servaddr));
+
+	if (err < 0) {
+		ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+	}
+	// ESP_LOGI(TAG, "Message sent to port: %d", port);
+
+	close(sockfd);
+
+	return 0;
 
 }
 

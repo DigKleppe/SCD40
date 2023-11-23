@@ -161,7 +161,6 @@ void app_main() {
 //	if(1) {
 		inLowPowerMode = true;
 		DHCPoff = true;
-		IP6off = true;
 		DNSoff = true;
 		fileServerOff = true;
 	} else {
@@ -189,10 +188,8 @@ void app_main() {
 	int I2CmasterPort = I2C_MASTER_NUM;
 	i2c_master_init();
 
-//	if( inLowPowerMode) {
-	while(!connected)
+	while(connectStatus !=  IP_RECEIVED)
 		vTaskDelay(10 / portTICK_PERIOD_MS);
-//	}
 
 	xTaskCreate(sensirionTask, "sensirionTask", 4 * 1024, &I2CmasterPort, 0, &SensirionTaskh);
 
@@ -200,7 +197,7 @@ void app_main() {
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
 		upTime++;
 
-		if (!connected) {
+		if (connectStatus !=  IP_RECEIVED) {
 			toggle = !toggle;
 			gpio_set_level(LED_PIN, toggle);
 		} else
@@ -211,12 +208,12 @@ void app_main() {
 				sensorDataIsSend = false;
 			    ESP_ERROR_CHECK(i2c_driver_delete(I2C_MASTER_NUM));
 			    ESP_LOGI(TAG, "I2C de-initialized successfully");
-				vTaskDelete(connectTaskh);
+			//	vTaskDelete(connectTaskh);
 				wifi_stop();
 				esp_deep_sleep_start();
 			}
 		}
-		if (connected && !inLowPowerMode) {
+		if ((connectStatus ==  IP_RECEIVED) && !inLowPowerMode) {
 			if (wifiSettings.updated) {
 				wifiSettings.updated = false;
 				saveSettings();
@@ -242,7 +239,6 @@ void app_main() {
 #else
 			}	while (1);
 #endif
-			vTaskDelete(connectTaskh);
 		    ESP_ERROR_CHECK(i2c_driver_delete(I2C_MASTER_NUM));
 			ESP_LOGI(TAG, "I2C de-initialized successfully");
 			wifi_stop();
