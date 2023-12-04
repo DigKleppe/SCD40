@@ -16,24 +16,20 @@
 #include "udpClient.h"
 #include "settings.h"
 #include "wifiConnect.h"
-
-#include "scd40.h"
-int16_t scd4x_start_periodic_measurement();
-extern bool inLowPowerMode;
-
-//#include "scd4x_i2c.h"
-//#include "sensirion_common.h"
-//#include "sensirion_i2c_hal.h"
-
 #include "cgiScripts.h"
+#include "averager.h"
+#include "scd40.h"
 
 #include <math.h>
 #include <string.h>
-#include "averager.h"
+
+int16_t scd4x_start_periodic_measurement();
+extern bool inLowPowerMode;
 
 
 #define MAXRETRIES 	5
 #define SCD30_TIMEOUT 600
+#define LOWPOWERSAMPLES 	3	// in low power mode take this number of samples and average (and reject the highest and lowest value)
 
 static const char *TAG = "sensirionTask";
 
@@ -44,9 +40,11 @@ TaskHandle_t SensirionTaskh;
 extern int scriptState;
 extern SemaphoreHandle_t I2CSemaphore;  // used by lvgl, shares the same bus
 
-Averager temperatureAvg(AVGERAGESAMPLES);
+Averager temperatureAvg(AVGERAGESAMPLES);  // uncorrected values, correction will be done in weppage
 Averager humAvg(AVGERAGESAMPLES);
 Averager CO2Avg(AVGERAGESAMPLES);
+
+Averager CO2LPAvg(LOWPOWERSAMPLES); // corrected value
 
 typedef struct {
 	int32_t timeStamp;
@@ -121,6 +119,8 @@ void sensirionTask(void *pvParameter) {
 	SCD40Status_t status;
 	SCD40serial_t serial;
 	int16_t error = 0;
+	int lowPowerSamples = LOWPOWERSAMPLES;
+	bool doSend = false;
 
 	ESP_LOGI(TAG, "Starting task");
 
@@ -177,10 +177,8 @@ void sensirionTask(void *pvParameter) {
 
 #else
 	do {
-		ESP_LOGI(TAG, "init");  // todo remove
+
 		vTaskDelay(100 / portTICK_PERIOD_MS);
-
-
 		if (SCD40Init(I2CmasterPort) != SCD40_OK) {
 			ESP_LOGE(TAG, "SCD40 Not found");
 			vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -204,35 +202,47 @@ void sensirionTask(void *pvParameter) {
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
 		status = SCD40Read(&rawValues);
 		if (status == SCD40_OK) {
-			if (inLowPowerMode)   // only 1 reading
-				scd4x_stop_periodic_measurement();
-
 			sensirionTimeoutTimer = SCD30_TIMEOUT;
 			lastVal.temperature = rawValues.temperature - userSettings.temperatureOffset;
 			lastVal.co2 = rawValues.co2 - userSettings.CO2offset;
 			lastVal.hum = rawValues.humidity - userSettings.RHoffset;
 			lastVal.timeStamp = timeStamp++;
 
-			ESP_LOGI(TAG, "t: %1.2f rh:%1.1f co2:%d", lastVal.temperature, lastVal.hum, (int) lastVal.co2);
-			if (connectStatus ==  IP_RECEIVED) {
-				sprintf(str, "3:%d\n", (int) lastVal.co2);
-				UDPsendMssg(UDPTXPORT, str, strlen(str));
-				UDPsendMssg(UDPTXPORT, str, strlen(str));
-				sprintf(str, "S: %s t:%1.2f rh:%1.1f co2:%d\n", userSettings.moduleName, lastVal.temperature, lastVal.hum, (int) lastVal.co2);
-				UDPsendMssg(UDPTX2PORT, str, strlen(str));
-				UDPsendMssg(UDPTX2PORT, str, strlen(str));
+			temperatureAvg.write((int) (rawValues.temperature * 100.0));  // avarage rawvalues
+			humAvg.write((int) ((int) rawValues.humidity));
+			CO2Avg.write((int) (rawValues.co2));
+			CO2LPAvg.write((int) (lastVal.co2)); // corrected value, send by udp
 
-				if (inLowPowerMode) {  // only 1 reading
-				//	scd4x_stop_periodic_measurement();
-					vTaskDelay(300 / portTICK_PERIOD_MS); // wait for UDP to send
+			ESP_LOGI(TAG, "t: %1.2f rh:%1.1f co2:%d", lastVal.temperature, lastVal.hum, (int) lastVal.co2);
+			if( lowPowerSamples > 0 )
+				lowPowerSamples--;
+
+			if (connectStatus == IP_RECEIVED) {
+				if (inLowPowerMode) {  // only LOWPOWERSAMPLES reading
+					if (lowPowerSamples == 0) {
+						scd4x_stop_periodic_measurement();
+						doSend = true;
+					}
+				} else
+					doSend = true;
+
+				if (doSend) {
+					sprintf(str, "3:%d\n", (int)CO2LPAvg.average()); // lastVal.co2);
+					UDPsendMssg(UDPTXPORT, str, strlen(str));
+					UDPsendMssg(UDPTXPORT, str, strlen(str));
+					sprintf(str, "S: %s t:%1.2f rh:%1.1f co2:%d\n", userSettings.moduleName, lastVal.temperature, lastVal.hum, (int) CO2LPAvg.average());
+					UDPsendMssg(UDPTX2PORT, str, strlen(str));
+					UDPsendMssg(UDPTX2PORT, str, strlen(str));
+				}
+
+				if (inLowPowerMode && (lowPowerSamples == 0)) {
+					vTaskDelay(200 / portTICK_PERIOD_MS); // wait for UDP to send
 					sensorDataIsSend = true;
 					while (1)
 						vTaskDelay(500 / portTICK_PERIOD_MS);
 				}
 			}
-			temperatureAvg.write((int) (rawValues.temperature * 100.0));  // avarage rawvalues
-			humAvg.write((int) ((int) rawValues.humidity));
-			CO2Avg.write((int) (rawValues.co2));
+
 		}
 		if (!inLowPowerMode) {
 			if (sensirionTimeoutTimer-- == 0) {

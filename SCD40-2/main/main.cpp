@@ -1,6 +1,6 @@
 /*
-. /home/dig/esp/master/esp-idf/export.sh
-  idf.py monitor -p /dev/ttyUSB2
+ . /home/dig/esp/master/esp-idf/export.sh
+ idf.py monitor -p /dev/ttyUSB2
  */
 
 #include <stdbool.h>
@@ -141,7 +141,7 @@ extern "C" {
 void app_main() {
 	esp_err_t err;
 	bool toggle = false;
-	int lowPowerTimer=0;
+	int lowPowerTimer = 0;
 
 	esp_rom_gpio_pad_select_gpio(LED_PIN);
 	gpio_set_direction(LED_PIN, GPIO_MODE_OUTPUT);
@@ -157,7 +157,7 @@ void app_main() {
 	esp_reset_reason_t reason = esp_reset_reason();
 
 #ifdef USE_LOWPOWERMODE
-	if (reason == ESP_RST_DEEPSLEEP ) {
+	if (reason == ESP_RST_DEEPSLEEP) {
 //	if(1) {
 		inLowPowerMode = true;
 		DHCPoff = true;
@@ -167,7 +167,7 @@ void app_main() {
 		lowPowerTimer = LOWPOWERDELAY;
 	}
 #endif
-	ESP_LOGI(TAG,"awoke reason: %d\n", reason);
+	ESP_LOGI(TAG, "awoke reason: %d\n", reason);
 	deep_sleep_register_rtc_timer_wakeup();
 	err = nvs_flash_init();
 	if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -188,7 +188,7 @@ void app_main() {
 	int I2CmasterPort = I2C_MASTER_NUM;
 	i2c_master_init();
 
-	while(connectStatus !=  IP_RECEIVED)
+	while (connectStatus != IP_RECEIVED)
 		vTaskDelay(10 / portTICK_PERIOD_MS);
 
 	xTaskCreate(sensirionTask, "sensirionTask", 4 * 1024, &I2CmasterPort, 0, &SensirionTaskh);
@@ -197,7 +197,7 @@ void app_main() {
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
 		upTime++;
 
-		if (connectStatus !=  IP_RECEIVED) {
+		if (connectStatus != IP_RECEIVED) {
 			toggle = !toggle;
 			gpio_set_level(LED_PIN, toggle);
 		} else
@@ -206,14 +206,13 @@ void app_main() {
 		if (inLowPowerMode) {
 			if (sensorDataIsSend) {
 				sensorDataIsSend = false;
-			    ESP_ERROR_CHECK(i2c_driver_delete(I2C_MASTER_NUM));
-			    ESP_LOGI(TAG, "I2C de-initialized successfully");
-			//	vTaskDelete(connectTaskh);
+				ESP_ERROR_CHECK(i2c_driver_delete(I2C_MASTER_NUM));
+				ESP_LOGI(TAG, "I2C de-initialized successfully");
 				wifi_stop();
 				esp_deep_sleep_start();
 			}
 		}
-		if ((connectStatus ==  IP_RECEIVED) && !inLowPowerMode) {
+		if ((connectStatus == IP_RECEIVED) && !inLowPowerMode) {
 			if (wifiSettings.updated) {
 				wifiSettings.updated = false;
 				saveSettings();
@@ -239,11 +238,11 @@ void app_main() {
 #else
 			}	while (1);
 #endif
-		    ESP_ERROR_CHECK(i2c_driver_delete(I2C_MASTER_NUM));
+			ESP_ERROR_CHECK(i2c_driver_delete(I2C_MASTER_NUM));
 			ESP_LOGI(TAG, "I2C de-initialized successfully");
 			wifi_stop();
 			esp_deep_sleep_start();
-			while(1)
+			while (1)
 				vTaskDelay(1000 / portTICK_PERIOD_MS);
 		}
 	}
